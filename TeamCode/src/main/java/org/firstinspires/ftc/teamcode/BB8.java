@@ -9,6 +9,7 @@ import com.qualcomm.robotcore.eventloop.opmode.Disabled;
 import com.qualcomm.robotcore.eventloop.opmode.OpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import com.qualcomm.robotcore.hardware.DcMotor;
+import com.qualcomm.robotcore.hardware.Servo;
 import com.qualcomm.robotcore.hardware.VoltageSensor;
 import com.qualcomm.robotcore.util.ElapsedTime;
 
@@ -29,12 +30,23 @@ public class BB8 extends OpMode
     private DcMotor left_motor = null;
     private DcMotor right_motor = null;
 
+    MediaPlayer mediaPlayer;
+
+    Servo leftServo;
+    Servo rightServo;
+
+    final double SERVO_MAX_ANGLE = 201;
 
     BNO055IMU imu;
     Orientation lastAngles;
 
+    double headingOffset = 0;
     double lastvoltrun = -1;
     double globalAngle = 0;
+
+    boolean lastABtn = false;
+    boolean lastXBtn = false;
+    boolean lastYBtn = false;
 
     @Override
     public void init() {
@@ -44,6 +56,8 @@ public class BB8 extends OpMode
         front_motor.setDirection(DcMotor.Direction.FORWARD);
         left_motor.setDirection(DcMotor.Direction.FORWARD);
         right_motor.setDirection(DcMotor.Direction.FORWARD);
+
+        mediaPlayer = MediaPlayer.create(hardwareMap.appContext, R.raw.giddy);
 
         BNO055IMU.Parameters parameters = new BNO055IMU.Parameters();
         parameters.angleUnit           = BNO055IMU.AngleUnit.DEGREES;
@@ -58,6 +72,13 @@ public class BB8 extends OpMode
         // and named "imu".
         imu = hardwareMap.get(BNO055IMU.class, "imu");
         imu.initialize(parameters);
+
+        leftServo = hardwareMap.servo.get("leftServo");
+        rightServo = hardwareMap.servo.get("rightServo");
+        rightServo.setDirection(Servo.Direction.REVERSE);
+
+        leftServo.scaleRange(0, SERVO_MAX_ANGLE);
+        rightServo.scaleRange(0, SERVO_MAX_ANGLE);
     }
 
     @Override
@@ -74,7 +95,6 @@ public class BB8 extends OpMode
 
     @Override
     public void loop() {
-
         double voltage = getBatteryVoltage();
         double heading = getAngle();
         double lastError = 0;
@@ -87,9 +107,20 @@ public class BB8 extends OpMode
             int awfes = errorrrrr[5414];
         }
 
-//        front_motor.setPower(0);
-//        left_motor.setPower(1);
-//        right_motor.setPower(-1);
+        if(gamepad1.a && !lastABtn) {
+            mediaPlayer.start();
+        }
+        lastABtn = gamepad1.a;
+
+        if(gamepad1.x && !lastXBtn) {
+            headingOffset -= 10;
+        }
+        lastXBtn = gamepad1.x;
+
+        if(gamepad1.y && !lastYBtn) {
+            headingOffset += 10;
+        }
+        lastYBtn = gamepad1.y;
 
         double input = 0;
         double setpoint = heading;
@@ -100,12 +131,49 @@ public class BB8 extends OpMode
 
         double P = kP * error;
 
-        double output = P + D;
+        double output = P;
         lastError = error;
 
-        front_motor.setPower(output);
-        left_motor.setPower(output);
-        right_motor.setPower(output);
+        output = 0;
+        output = (gamepad1.right_stick_x);
+
+        double front = output;
+        double left = output;
+        double right = output;
+
+        double x = gamepad1.left_stick_x;
+        double y = gamepad1.left_stick_y;
+
+        heading += headingOffset;
+
+        front += x*Math.cos(Math.toRadians(heading)) - y*Math.sin(Math.toRadians(heading));
+        left += x*Math.cos(Math.toRadians(heading + 120)) - y*Math.sin(Math.toRadians(heading + 120));
+        right += x*Math.cos(Math.toRadians(heading + 240)) - y*Math.sin(Math.toRadians(heading + 240));
+
+//        front += x;
+//        left += 0.5 * x - Math.sqrt(3)/2 * y;
+//        right += 0.5 * x + Math.sqrt(3)/2 * y;
+//
+        front_motor.setPower(front);
+        left_motor.setPower(left);
+        right_motor.setPower(right);
+
+        double righty = -gamepad1.right_stick_y;
+        double rightx = -gamepad1.right_stick_x;
+
+        double thetaMax = 90;
+        double thetaY = -thetaMax/2. * righty + thetaMax/2.;
+        double thetaXRight = thetaMax/2. * rightx;
+        double thetaXLeft = -thetaMax/2. * rightx;
+
+        double angleRight = thetaY + thetaXRight;
+        double angleLeft = thetaY + thetaXLeft;
+
+        leftServo.setPosition(angleLeft / SERVO_MAX_ANGLE);
+        rightServo.setPosition(angleRight / SERVO_MAX_ANGLE);
+
+        telemetry.addData("LeftOutput", angleLeft);
+        telemetry.addData("RightOutput", angleRight);
 
 //        telemetry.addData("joystick left y", gamepad1.left_stick_y);
 //         telemetry.addData("joystick right y", gamepad2.right_stick_y);
